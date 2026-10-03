@@ -33,24 +33,29 @@ def post_api(path: str, payload: dict, token: str | None = None) -> dict:
 def make_summary() -> str:
     dry_run = os.environ.get("DRY_RUN") == "true"
     ok = os.environ.get("JOB_STATUS") == "success" and os.environ.get("SENDER_OUTCOME") == "success"
-    mode = "预演检查（未发送抖音消息）" if dry_run else "正式发送"
-    status = "完成" if ok else "未完成，请查看运行记录"
-    lines = ["抖音续火花", f"模式：{mode}", f"结果：{status}"]
+    succeeded = 0
+    sent_people = 0
     result_path = Path("artifacts/result.json")
     if result_path.exists():
         try:
             results = json.loads(result_path.read_text(encoding="utf-8"))["results"]
             succeeded = sum(item["status"] == "success" for item in results)
-            failed = sum(item["status"] == "failed" for item in results)
-            sent = sum(item.get("sent", 0) for item in results)
-            lines += [f"检查成功：{succeeded}，失败：{failed}", f"实际发送条数：{sent}"]
-        except (ValueError, KeyError, TypeError):
-            lines.append("统计结果无法读取，请查看运行记录。")
+            sent_people = sum(item.get("sent", 0) > 0 for item in results)
+        except (OSError, ValueError, KeyError, TypeError):
+            ok = False
     else:
-        lines.append("任务未产生统计结果，请查看运行记录。")
-    run_url = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
-    lines.append(f"运行记录：{run_url}")
-    return "\n".join(lines)
+        ok = False
+    if dry_run:
+        if ok:
+            return f"名单检查好了 ✅\n{succeeded} 个聊天都能找到。\n这次没有发消息。"
+        return "这次检查没完成 ⚠️\n没有发送抖音消息。\n告诉我一声，我来检查。"
+    if ok and sent_people:
+        return f"今天的火花消息发好了 🔥\n已发给 {sent_people} 位好友。"
+    if ok:
+        return "今天没有发送新消息。\n如果你原本希望发送，告诉我一声。"
+    if sent_people:
+        return f"今天的消息没发完 ⚠️\n已经发给 {sent_people} 位好友。\n先别重复发送，告诉我一声，我来检查。"
+    return "今天的火花消息没发出去 ⚠️\n告诉我一声，我来检查。"
 
 
 def main() -> int:
@@ -58,7 +63,7 @@ def main() -> int:
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary:
         with open(step_summary, "a", encoding="utf-8") as handle:
-            handle.write(summary + "\n")
+            handle.write(summary.replace("\n", "\n\n") + "\n")
     app_id = os.environ.get("FEISHU_APP_ID")
     secret = os.environ.get("FEISHU_APP_SECRET")
     receive_id = os.environ.get("FEISHU_RECEIVE_ID")
