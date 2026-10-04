@@ -90,10 +90,17 @@ def make_summary() -> str:
     results = results if isinstance(results, list) else []
     indexed = {item["target"]: item for item in results if isinstance(item, dict) and isinstance(item.get("target"), str)}
     successful, unsuccessful, pending = [], [], []
+    manual_skips, no_streak, unknown_streak = [], [], []
     for index, name in enumerate(names):
         item = indexed.get(f"好友{index + 1:02d}", indexed.get(name))
         if item is None:
             pending.append(name)
+        elif item.get("status") == "skipped" and item.get("error") == "今天已手动续完":
+            manual_skips.append(name)
+        elif item.get("status") == "skipped" and item.get("error") == "没有火花，已跳过":
+            no_streak.append(name)
+        elif item.get("status") == "unknown" and item.get("error") == "火花状态无法确认，未发送":
+            unknown_streak.append(name)
         elif dry_run:
             (successful if item.get("status") == "success" else unsuccessful).append(name)
         elif isinstance(item.get("sent"), int) and item["sent"] > 0:
@@ -102,11 +109,12 @@ def make_summary() -> str:
             unsuccessful.append(name)
         else:
             pending.append(name)
-    ok = ok and bool(names) and len(successful) == len(names)
+    skipped_count = len(manual_skips) + len(no_streak)
+    ok = ok and bool(names) and len(successful) + skipped_count == len(names)
     if dry_run:
         title = "名单检查好了 ✅" if ok else "名单还没检查完 ⚠️"
     elif ok:
-        title = "今天的火花消息发好了 🔥"
+        title = "今天的火花消息发好了 🔥" if successful else "这次检查完成，全部已跳过。"
     elif successful:
         title = "今天的消息还没全部发完 ⚠️" if len(successful) < len(names) else "消息已发出，任务收尾没完成 ⚠️"
     else:
@@ -117,15 +125,21 @@ def make_summary() -> str:
     lines = [title, f"日期：{date.year}年{date.month}月{date.day}日", "这次只检查，没有发消息。" if dry_run else "这次是实际发送消息。"]
     if names:
         if dry_run:
-            lines.append(f"人数：共{len(names)}人，{len(successful)}人已确认，{len(unsuccessful) + len(pending)}人待确认")
+            lines.append(f"人数：共{len(names)}人，{len(successful)}人已确认，{len(unsuccessful) + len(pending) + len(unknown_streak)}人待确认" + (f"，{skipped_count}人已跳过" if skipped_count else ""))
             lines += [""] + list_lines("已确认的好友", successful)
             lines += [""] + list_lines("暂时没确认的好友", unsuccessful + pending)
         else:
-            lines.append(f"人数：共{len(names)}人，{len(successful)}人已发，{len(unsuccessful)}人没发成功，{len(pending)}人结果待确认")
+            lines.append(f"人数：共{len(names)}人，{len(successful)}人已发，{len(unsuccessful)}人没发成功，{len(pending)}人结果待确认" + (f"，{skipped_count}人已跳过" if skipped_count else "") + (f"，{len(unknown_streak)}人火花状态待确认（未发送）" if unknown_streak else ""))
             lines += [""] + list_lines("已发成功的好友", successful)
             lines += [""] + list_lines("没发成功的好友", unsuccessful)
             if pending:
                 lines += [""] + list_lines("还没确认发送结果的好友", pending)
+        if manual_skips:
+            lines += [""] + list_lines("你今天已续好，已跳过", manual_skips)
+        if no_streak:
+            lines += [""] + list_lines("没有火花，已跳过", no_streak)
+        if unknown_streak:
+            lines += [""] + list_lines("火花状态暂时读不清，未发送", unknown_streak)
     else:
         lines.append("好友名单暂时无法读取，人数和名字还不能确认。")
     lines.append("")
