@@ -51,6 +51,7 @@ jobs:
         id: sender
         env:
           DOUYIN_COOKIE: ${{ secrets.DOUYIN_COOKIE }}
+          DOUYIN_STORAGE_STATE: ${{ secrets.DOUYIN_STORAGE_STATE }}
           HEADLESS: "true"
           TRACE: "false"
           DRY_RUN: ${{ inputs.dry_run }}
