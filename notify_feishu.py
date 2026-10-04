@@ -149,7 +149,7 @@ def make_card(summary: str) -> dict:
     date, body = summary.split("\n", 1)
     title, details = body.split("\n", 1)
     details, times = details.rsplit("\n\n", 1)
-    template = "blue" if os.environ.get("DRY_RUN") == "true" else "green" if title in ("今天的抖音火花续好啦！", "今天无需续火花") else "orange"
+    template = "blue" if os.environ.get("DRY_RUN") == "true" or title in ("今天的抖音火花续好啦！", "今天无需续火花") else "orange"
     return {
         "config": {"wide_screen_mode": True},
         "header": {"template": template, "title": {"tag": "plain_text", "content": ACCOUNT_NAME}},
