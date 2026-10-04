@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Only verify login and friends without sending
+        description: 只检查名单，不发消息
         type: boolean
         default: true
+      send_once:
+        description: 这次发送一次，不开启每日定时
+        type: boolean
+        default: false
   # Enable only after the owner approves, together with STREAK_ENABLED=true.
   # schedule:
   #   - cron: "0 0 * * *"
@@ -31,8 +35,9 @@ jobs:
         env:
           DRY_RUN: ${{ inputs.dry_run }}
           STREAK_ENABLED: ${{ vars.STREAK_ENABLED }}
+          SEND_ONCE: ${{ inputs.send_once }}
         run: |
-          if [[ "$DRY_RUN" != "true" && "$STREAK_ENABLED" != "true" ]]; then
+          if [[ "$DRY_RUN" != "true" && "$STREAK_ENABLED" != "true" && "$SEND_ONCE" != "true" ]]; then
             echo "::error::Formal sending is paused pending the owner's approval."
             exit 1
           fi
@@ -50,6 +55,7 @@ jobs:
           TRACE: "false"
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          echo "SENDER_STARTED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
           if [[ "$DRY_RUN" == "true" ]]; then
             python run.py --dry-run
           else
@@ -61,6 +67,8 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_RECEIVE_ID: ${{ secrets.FEISHU_RECEIVE_ID }}
+          DOUYIN_CONFIG: ${{ secrets.DOUYIN_CONFIG }}
+          STREAK_ENABLED: ${{ vars.STREAK_ENABLED }}
           DRY_RUN: ${{ inputs.dry_run }}
           JOB_STATUS: ${{ job.status }}
           SENDER_OUTCOME: ${{ steps.sender.outcome }}
