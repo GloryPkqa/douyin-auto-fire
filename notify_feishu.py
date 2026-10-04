@@ -69,15 +69,15 @@ def list_lines(label: str, names: list[str]) -> list[str]:
 
 def next_plan(reference: datetime) -> str:
     if os.environ.get("STREAK_ENABLED") != "true":
-        return "下次计划：每日定时还没开启。"
+        return "下次计划：未开启"
     try:
         workflow = Path(".github/workflows/send.yml").read_text(encoding="utf-8-sig")
     except OSError:
         workflow = ""
     if not re.search(r"^  schedule:\s*$", workflow, re.MULTILINE) or not re.search(r"^    - cron: [\"']0 0 \* \* \*[\"']\s*$", workflow, re.MULTILINE):
-        return "下次计划：暂未安排。"
+        return "下次计划：暂未安排"
     upcoming = reference.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-    return f"下次计划：{upcoming.month}月{upcoming.day}日 00:00（北京时间）"
+    return f"下次计划：{upcoming.year}/{upcoming.month}/{upcoming.day} 00:00（北京时间）"
 
 
 def make_summary() -> str:
@@ -112,44 +112,52 @@ def make_summary() -> str:
     skipped_count = len(manual_skips) + len(no_streak)
     ok = ok and bool(names) and len(successful) + skipped_count == len(names)
     if dry_run:
-        title = "名单检查好了 ✅" if ok else "名单还没检查完 ⚠️"
+        title = "名单检查好了（未发送）" if ok else "名单还没检查完（未发送）"
     elif ok:
-        title = "今天的火花消息发好了 🔥" if successful else "这次检查完成，全部已跳过。"
+        title = "今天的抖音火花续好啦！" if successful else "今天无需续火花"
     elif successful:
-        title = "今天的消息还没全部发完 ⚠️" if len(successful) < len(names) else "消息已发出，任务收尾没完成 ⚠️"
+        title = "今天的抖音火花还没全部续好" if len(successful) + skipped_count < len(names) else "火花已发送，任务收尾未完成"
     else:
-        title = "今天的消息还没完成 ⚠️"
+        title = "今天的抖音火花还没续好"
     finished = beijing_time(metrics.get("finished_at")) or beijing_time(report.get("finished_at")) or datetime.now(BEIJING)
     started = beijing_time(metrics.get("started_at")) or beijing_time(os.environ.get("SENDER_STARTED_AT"))
     date = started or finished
-    lines = [title, f"日期：{date.year}年{date.month}月{date.day}日", "这次只检查，没有发消息。" if dry_run else "这次是实际发送消息。"]
+    lines = [f"{date.year}/{date.month}/{date.day}", title]
     if names:
         if dry_run:
-            lines.append(f"人数：共{len(names)}人，{len(successful)}人已确认，{len(unsuccessful) + len(pending) + len(unknown_streak)}人待确认" + (f"，{skipped_count}人已跳过" if skipped_count else ""))
-            lines += [""] + list_lines("已确认的好友", successful)
-            lines += [""] + list_lines("暂时没确认的好友", unsuccessful + pending)
+            lines.append(f"人数：{len(successful)}/{len(names) - skipped_count}")
+            lines += [""] + list_lines("未通过检查", unsuccessful + pending + unknown_streak)
         else:
-            lines.append(f"人数：共{len(names)}人，{len(successful)}人已发，{len(unsuccessful)}人没发成功，{len(pending)}人结果待确认" + (f"，{skipped_count}人已跳过" if skipped_count else "") + (f"，{len(unknown_streak)}人火花状态待确认（未发送）" if unknown_streak else ""))
-            lines += [""] + list_lines("已发成功的好友", successful)
-            lines += [""] + list_lines("没发成功的好友", unsuccessful)
-            if pending:
-                lines += [""] + list_lines("还没确认发送结果的好友", pending)
-        if manual_skips:
-            lines += [""] + list_lines("你今天已续好，已跳过", manual_skips)
-        if no_streak:
-            lines += [""] + list_lines("没有火花，已跳过", no_streak)
-        if unknown_streak:
-            lines += [""] + list_lines("火花状态暂时读不清，未发送", unknown_streak)
+            lines.append(f"人数：{len(successful)}/{len(names) - skipped_count}")
+            needs_attention = unsuccessful + [f"{name}（结果待确认）" for name in pending] + [f"{name}（火花状态待确认，未发送）" for name in unknown_streak]
+            lines += [""] + list_lines("续火失败", needs_attention)
     else:
-        lines.append("好友名单暂时无法读取，人数和名字还不能确认。")
+        lines += ["人数：未取得", "", "续火失败：名单无法读取"]
     lines.append("")
     if started:
-        start_label = started.strftime("%H:%M") if started.date() == finished.date() else f"{started.month}月{started.day}日 {started:%H:%M}"
-        lines.append(f"开始：{start_label} ｜ 结束：{finished:%H:%M}（北京时间）")
+        start_label = started.strftime("%H:%M") if started.date() == finished.date() else f"{started.month}/{started.day} {started:%H:%M}"
+        lines.append(f"开始：{start_label}")
     else:
-        lines.append(f"开始：尚未取得时间 ｜ 结束：{finished:%H:%M}（北京时间）")
+        lines.append("开始：未取得")
+    lines.append(f"结束：{finished:%H:%M}")
     lines.append(next_plan(finished))
     return "\n".join(lines)
+
+
+def make_card(summary: str) -> dict:
+    date, body = summary.split("\n", 1)
+    title, details = body.split("\n", 1)
+    details, times = details.rsplit("\n\n", 1)
+    template = "blue" if os.environ.get("DRY_RUN") == "true" else "green" if title in ("今天的抖音火花续好啦！", "今天无需续火花") else "orange"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {"template": template, "title": {"tag": "plain_text", "content": date}},
+        "elements": [
+            {"tag": "div", "text": {"tag": "lark_md", "content": f"**{title}**\n{details}"}},
+            {"tag": "hr"},
+            {"tag": "div", "text": {"tag": "plain_text", "content": times}},
+        ],
+    }
 
 
 def public_note(delivered: bool) -> None:
@@ -176,8 +184,8 @@ def main() -> int:
         identity = "/".join(os.environ.get(name, "") for name in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"))
         post_api("im/v1/messages?receive_id_type=open_id", {
             "receive_id": receive_id,
-            "msg_type": "text",
-            "content": json.dumps({"text": summary}, ensure_ascii=False),
+            "msg_type": "interactive",
+            "content": json.dumps(make_card(summary), ensure_ascii=False),
             "uuid": str(uuid.uuid5(uuid.NAMESPACE_URL, identity)),
         }, token)
     except RuntimeError as exc:
