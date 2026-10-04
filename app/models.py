@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -43,6 +43,8 @@ class TaskConfig:
     prevent_duplicates: bool
     target_open_retries: int = 1
     target_open_timeout_seconds: float = 15.0
+    require_existing_streak: bool = False
+    skip_targets_by_date: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -68,3 +70,4 @@ class TargetResult:
     sent: int = 0
     error: str | None = None
     target_alias: str | None = None
+
