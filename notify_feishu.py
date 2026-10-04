@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 BASE_URL = "https://open.feishu.cn/open-apis/"
 BEIJING = ZoneInfo("Asia/Shanghai")
+ACCOUNT_NAME = "GloryPkqa"
 
 
 def post_api(path: str, payload: dict, token: str | None = None) -> dict:
@@ -151,11 +152,12 @@ def make_card(summary: str) -> dict:
     template = "blue" if os.environ.get("DRY_RUN") == "true" else "green" if title in ("今天的抖音火花续好啦！", "今天无需续火花") else "orange"
     return {
         "config": {"wide_screen_mode": True},
-        "header": {"template": template, "title": {"tag": "plain_text", "content": date}},
+        "header": {"template": template, "title": {"tag": "plain_text", "content": ACCOUNT_NAME}},
         "elements": [
             {"tag": "div", "text": {"tag": "lark_md", "content": f"**{title}**\n{details}"}},
             {"tag": "hr"},
             {"tag": "div", "text": {"tag": "plain_text", "content": times}},
+            {"tag": "note", "elements": [{"tag": "plain_text", "content": date}]},
         ],
     }
 
