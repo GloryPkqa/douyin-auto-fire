@@ -45,9 +45,18 @@ class DouyinChat:
         await search.click()
         await search.fill("")
         await search.fill(name)
-        await self.page.wait_for_timeout(1_500)
-
-        result = await self._search_result(name)
+        # Search results load asynchronously; keep looking for this exact target
+        # within the configured budget instead of declaring failure after 1.5s.
+        deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
+        result = None
+        while True:
+            result = await self._search_result(name)
+            if result is not None:
+                break
+            remaining_ms = int((deadline - asyncio.get_running_loop().time()) * 1000)
+            if remaining_ms <= 0:
+                break
+            await self.page.wait_for_timeout(min(500, remaining_ms))
         if result is None:
             raise PageOperationError("搜索不到目标好友")
         await result.click(force=True)
@@ -332,3 +341,4 @@ async def first_visible(page: Page, selectors: tuple[str, ...], timeout_ms: int 
         except Exception:
             continue
     raise PageOperationError(f"找不到页面元素，已尝试: {', '.join(selectors)}")
+
