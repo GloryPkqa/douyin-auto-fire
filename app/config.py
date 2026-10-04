@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from datetime import date
 from typing import Any
 
 from dotenv import load_dotenv
@@ -96,14 +97,35 @@ def load_task(settings: Settings) -> TaskConfig:
         prevent_duplicates=raw.get("prevent_duplicates", False),
         target_open_retries=target_open_retries,
         target_open_timeout_seconds=target_open_timeout_seconds,
+        require_existing_streak=raw.get("require_existing_streak", False),
+        skip_targets_by_date=_parse_skip_dates(raw.get("skip_targets_by_date", {}), targets),
     )
     if not isinstance(task.continue_on_error, bool):
         raise ConfigError("continue_on_error 必须是布尔值")
     if not isinstance(task.prevent_duplicates, bool):
         raise ConfigError("prevent_duplicates 必须是布尔值")
+    if not isinstance(task.require_existing_streak, bool):
+        raise ConfigError("require_existing_streak 必须是布尔值")
 
     _validate_stickers(task)
     return task
+
+
+def _parse_skip_dates(raw: Any, targets: tuple[Target, ...]) -> dict[str, tuple[str, ...]]:
+    if not isinstance(raw, dict):
+        raise ConfigError("skip_targets_by_date 必须是对象")
+    known = {target.name for target in targets}
+    result = {}
+    for day, names in raw.items():
+        try:
+            if not isinstance(day, str) or date.fromisoformat(day).isoformat() != day:
+                raise ValueError
+        except ValueError:
+            raise ConfigError("skip_targets_by_date 日期必须是 YYYY-MM-DD") from None
+        if not isinstance(names, list) or any(not isinstance(name, str) or name not in known for name in names):
+            raise ConfigError("skip_targets_by_date 的好友必须来自任务名单")
+        result[day] = tuple(names)
+    return result
 
 
 def parse_auth_json(value: str, label: str) -> Any:
@@ -269,3 +291,4 @@ def _parse_webhook_headers(value: str | None) -> dict[str, str] | None:
         key, val = pair.split("=", 1)
         headers[key.strip()] = val.strip()
     return headers if headers else None
+
