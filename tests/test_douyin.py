@@ -48,6 +48,7 @@ def _search_page(names: list[str]) -> tuple[MagicMock, list[MagicMock]]:
     for displayed_name in names:
         name_node = MagicMock()
         name_node.inner_text = AsyncMock(return_value=f" {displayed_name} ")
+        name_node.text_content = AsyncMock(return_value=f" {displayed_name} ")
         name_node.is_visible = AsyncMock(return_value=True)
         exact_names = _locator_group([name_node])
         button = MagicMock(name=f"message-{displayed_name}")
@@ -262,11 +263,13 @@ def _chat_page(
     empty = _locator_group([])
     header_name_node = MagicMock()
     header_name_node.inner_text = AsyncMock(return_value=f" {header_name} ")
+    header_name_node.text_content = AsyncMock(return_value=f" {header_name} ")
     header_name_node.is_visible = AsyncMock(return_value=name_visible)
     nodes = [header_name_node]
     if stale_name is not None:
         stale_node = MagicMock()
         stale_node.inner_text = AsyncMock(return_value=f" {stale_name} ")
+        stale_node.text_content = AsyncMock(return_value=f" {stale_name} ")
         stale_node.is_visible = AsyncMock(return_value=False)
         nodes.append(stale_node)
     exact_names = _locator_group(nodes)
@@ -447,3 +450,15 @@ def test_group_count_suffix_matches_escapes_expected_regex_meta() -> None:
 # Suppress the unused `re` import warning the linter may raise for the
 # pure-assertion block above; `re` is intentionally kept as a sanity anchor.
 _ = re
+
+
+@pytest.mark.asyncio
+async def test_search_result_ignores_highlight_layout_breaks_without_matching_prefix() -> None:
+    page, buttons = _search_page(["刘乐乐", "刘乐乐1"])
+    item = page.locator('[class*="SearchPanelitembox"], [class*="SearchPanelitem-box"], [class*="SearchPanelitem_box"]').nth(0)
+    title = item.locator('[class*="SearchPanelitemname"]').nth(0)
+    title.inner_text = AsyncMock(return_value="刘\\n乐乐")
+
+    assert await DouyinChat(page)._search_result("刘乐乐") is buttons[0]
+    assert await DouyinChat(page)._search_result("刘乐") is None
+
