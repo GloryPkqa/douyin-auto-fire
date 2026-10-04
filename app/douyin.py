@@ -49,6 +49,8 @@ class DouyinChat:
         # Search results load asynchronously; keep looking for this exact target
         # within the configured budget instead of declaring failure after 1.5s.
         deadline = asyncio.get_running_loop().time() + self.timeout_ms / 1000
+        short_query_at = deadline - self.timeout_ms / 2000
+        short_query_used = len(name) <= 1
         result = None
         while True:
             result = await self._search_result(name)
@@ -57,6 +59,12 @@ class DouyinChat:
             remaining_ms = int((deadline - asyncio.get_running_loop().time()) * 1000)
             if remaining_ms <= 0:
                 break
+            # Douyin may return no results for a full remark while finding the
+            # same contact with a shorter query. The query is only retrieval:
+            # _search_result still requires the complete exact recipient name.
+            if not short_query_used and asyncio.get_running_loop().time() >= short_query_at:
+                await search.fill(name[0])
+                short_query_used = True
             await self.page.wait_for_timeout(min(500, remaining_ms))
         if result is None:
             raise PageOperationError("搜索不到目标好友")
@@ -286,7 +294,9 @@ def _streak_snapshot_status(snapshot: dict, name: str) -> Literal["present", "ab
         return "unknown"
     streak = streaks[0]
     days = str(streak.get("days", "")).strip()
-    if not days.isdecimal() or int(days) <= 0:
+    normal_days = days.isdecimal() and int(days) > 0
+    expiring_label = re.fullmatch(r"\d+\s*天后消失", days) is not None
+    if not normal_days and not expiring_label:
         return "unknown"
     # The observed official streak component uses flame_icon assets, including
     # gray_normal.png. A changed or unrecognizable component fails closed.
@@ -362,7 +372,9 @@ async def _has_exact_text(locators: Locator, expected: str) -> bool:
 
 async def _text_equals(locator: Locator, expected: str) -> bool:
     try:
-        return (await locator.inner_text(timeout=500)).strip() == expected
+        # Highlight spans introduce visual line breaks during a short search;
+        # text_content preserves the exact logical name without those breaks.
+        return (await locator.text_content(timeout=500) or "").strip() == expected
     except Exception:
         return False
 
@@ -388,7 +400,7 @@ def _group_count_suffix_matches(actual: str, expected: str) -> bool:
 async def _group_name_matches(locator: Locator, expected: str) -> bool:
     try:
         return _group_count_suffix_matches(
-            await locator.inner_text(timeout=500), expected
+            (await locator.text_content(timeout=500) or ""), expected
         )
     except Exception:
         return False
