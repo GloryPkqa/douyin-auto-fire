@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from typing import Literal
 
 from playwright.async_api import Locator, Page
 
@@ -175,6 +176,30 @@ class DouyinChat:
     async def message_input(self) -> Locator:
         return await first_visible(self.page, MESSAGE_INPUTS, self.timeout_ms)
 
+    async def streak_status(self, name: str) -> Literal["present", "absent", "unknown"]:
+        # Read only the confirmed current chat header, never message text, the
+        # conversation cache, or an unrelated friend's flame. Gray flames count
+        # as existing streaks too; this does not assert today's renewal is done.
+        deadline = asyncio.get_running_loop().time() + 3.0
+        absent_since = None
+        while True:
+            snapshot = await self.page.evaluate(STREAK_HEADER_SNAPSHOT)
+            state = _streak_snapshot_status(snapshot, name)
+            now = asyncio.get_running_loop().time()
+            if state == "present":
+                return state
+            if state == "absent":
+                if absent_since is None:
+                    absent_since = now
+                # Give asynchronously mounted header decorations time to load.
+                if now - absent_since >= 2.0:
+                    return "absent"
+            else:
+                absent_since = None
+            if now >= deadline:
+                return "unknown"
+            await self.page.wait_for_timeout(min(250, max(1, int((deadline - now) * 1000))))
+
     async def _confirm_opened(self, name: str, timeout_ms: int | None = None) -> None:
         timeout = timeout_ms if timeout_ms is not None else self.confirm_timeout_ms
         deadline = asyncio.get_running_loop().time() + timeout / 1000
@@ -231,6 +256,44 @@ class DouyinChat:
             except Exception:
                 continue
         return False
+
+
+STREAK_HEADER_SNAPSHOT = """() => {
+    const visible = e => !!e && !!e.getClientRects().length &&
+        getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
+    const headers = Array.from(document.querySelectorAll('.RightPanelHeaderconvHeader')).filter(visible);
+    if (headers.length !== 1) return {ready: false};
+    const header = headers[0];
+    const title = header.querySelector('.RightPanelHeadertitle');
+    if (!visible(title)) return {ready: false};
+    const markers = Array.from(header.querySelectorAll('.commonStreakstreakContainer'));
+    const streaks = markers.filter(visible).map(marker => ({
+        days: marker.querySelector('.commonStreaknormalText')?.textContent?.trim() || '',
+        icons: Array.from(marker.querySelectorAll('img.commonStreakicon')).filter(visible)
+            .map(icon => icon.getAttribute('src') || '')
+    }));
+    return {ready: true, title: title.textContent.trim(), markerCount: markers.length, streaks};
+}"""
+
+
+def _streak_snapshot_status(snapshot: dict, name: str) -> Literal["present", "absent", "unknown"]:
+    if not snapshot.get("ready") or not _group_count_suffix_matches(str(snapshot.get("title", "")), name):
+        return "unknown"
+    if snapshot.get("markerCount") == 0:
+        return "absent"
+    streaks = snapshot.get("streaks", [])
+    if len(streaks) != 1:
+        return "unknown"
+    streak = streaks[0]
+    days = str(streak.get("days", "")).strip()
+    if not days.isdecimal() or int(days) <= 0:
+        return "unknown"
+    # The observed official streak component uses flame_icon assets, including
+    # gray_normal.png. A changed or unrecognizable component fails closed.
+    icons = streak.get("icons", [])
+    if len(icons) != 1 or "/flame_icon/" not in icons[0]:
+        return "unknown"
+    return "present"
 
 
 async def _visible_exact_text_in(container: Locator, selectors: tuple[str, ...], expected: str) -> bool:
