@@ -96,8 +96,26 @@ async def run(dry_run: bool = False, env_file: str | None = None) -> int:
                     try:
                         LOGGER.info("处理好友: %s", alias)
 
+                        if target.name in task.skip_targets_by_date.get(run_date, ()):
+                            results.append(TargetResult(target=target.name, status="skipped", error="今天已手动续完", target_alias=alias))
+                            metrics.record_skipped_message()
+                            multi_stage.update_progress(1)
+                            LOGGER.info("跳过今天已手动续完的好友: %s", alias)
+                            continue
+
                         # 使用智能重试策略打开目标
                         await _open_target_with_retry(chat, target.name, task.target_open_retries)
+
+                        if task.require_existing_streak:
+                            streak = await chat.streak_status(target.name)
+                            if streak != "present":
+                                reason = "没有火花，已跳过" if streak == "absent" else "火花状态无法确认，未发送"
+                                status = "skipped" if streak == "absent" else "unknown"
+                                results.append(TargetResult(target=target.name, status=status, error=reason, target_alias=alias))
+                                metrics.record_skipped_message()
+                                multi_stage.update_progress(1)
+                                LOGGER.info("%s: %s", reason, alias)
+                                continue
 
                         if not dry_run:
                             for message_index, message in enumerate(target.messages):
@@ -436,3 +454,4 @@ async def _open_target_with_retry(chat: DouyinChat, target_name: str, max_retrie
     # 所有重试都失败，抛出最后一个异常
     if last_exception:
         raise last_exception
+
