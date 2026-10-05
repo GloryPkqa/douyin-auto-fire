@@ -1,4 +1,5 @@
 name: Send Douyin Messages
+run-name: ${{ inputs.dry_run && 'Douyin check' || 'Daily Douyin streak' }}
 
 on:
   workflow_dispatch:
@@ -11,9 +12,6 @@ on:
         description: 这次发送一次，不开启每日定时
         type: boolean
         default: false
-  schedule:
-    - cron: "0 0 * * *"
-      timezone: "Asia/Shanghai"
 
 concurrency:
   group: douyin-daily-sender
@@ -74,3 +72,4 @@ jobs:
           SENDER_OUTCOME: ${{ steps.sender.outcome }}
         run: python notify_feishu.py
       # Chat screenshots and traces are intentionally not uploaded.
+
