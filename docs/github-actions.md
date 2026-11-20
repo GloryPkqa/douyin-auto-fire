@@ -190,6 +190,16 @@ GitHub 保存 Secret 后不会再次显示具体内容，这是正常现象。
 
 ---
 
+### 5.3 使用扫码登录状态
+
+按 [Windows 登录说明](windows.md#7-单账号扫码登录)生成 `storage-state.json` 后，在项目根目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\login.py --export-github
+```
+
+将 `storage-state-github.txt` 的完整内容填入仓库的 `DOUYIN_STORAGE_STATE` Secret。该文件保留 Cookie 和站点存储，含有登录凭证，请只在本机和 GitHub Secret 中使用。
+
 ## 6. 第一次运行：Dry Run
 
 配置完成后，不建议第一次就直接真实发送。

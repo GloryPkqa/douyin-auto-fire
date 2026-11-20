@@ -90,6 +90,8 @@ def make_summary() -> str:
     results = report.get("results", [])
     results = results if isinstance(results, list) else []
     indexed = {item["target"]: item for item in results if isinstance(item, dict) and isinstance(item.get("target"), str)}
+    login_check = indexed.get("登录检查")
+    login_aborted = len(results) == 1 and login_check is not None and login_check.get("status") == "failed"
     successful, unsuccessful, pending = [], [], []
     manual_skips, no_streak, unknown_streak = [], [], []
     for index, name in enumerate(names):
@@ -112,7 +114,9 @@ def make_summary() -> str:
             pending.append(name)
     skipped_count = len(manual_skips) + len(no_streak)
     ok = ok and bool(names) and len(successful) + skipped_count == len(names)
-    if dry_run:
+    if login_aborted:
+        title = "抖音登录检查失败（本次未发送）"
+    elif dry_run:
         title = "名单检查好了（未发送）" if ok else "名单还没检查完（未发送）"
     elif ok:
         title = "今天的抖音火花续好啦！" if successful else "今天无需续火花"
@@ -124,7 +128,15 @@ def make_summary() -> str:
     started = beijing_time(metrics.get("started_at")) or beijing_time(os.environ.get("SENDER_STARTED_AT"))
     date = started or finished
     lines = [f"{date.year}/{date.month}/{date.day}", title]
-    if names:
+    if login_aborted:
+        login_error = str(login_check.get("error", ""))
+        if "登录状态失效" in login_error:
+            lines.append("原因：抖音登录状态失效")
+        elif "安全验证" in login_error:
+            lines.append("原因：抖音要求完成安全验证")
+        else:
+            lines.append("原因：未能确认抖音登录状态")
+    elif names:
         if dry_run:
             lines.append(f"人数：{len(successful)}/{len(names) - skipped_count}")
             lines += [""] + list_lines("未通过检查", unsuccessful + pending + unknown_streak)

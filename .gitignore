@@ -11,4 +11,6 @@ config/tasks.json
 config/tasks/
 config.json
 storage-state.json
+storage-state-github.txt
+storage-state-github.txt.tmp
 storage_state/
