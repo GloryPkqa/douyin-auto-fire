@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import base64
+import gzip
+import io
 import json
 import os
+import zlib
 from pathlib import Path
 from datetime import date
 from typing import Any
@@ -13,6 +17,10 @@ from app.models import Message, Settings, Sticker, Target, TaskConfig
 
 class ConfigError(ValueError):
     pass
+
+
+PACKED_STORAGE_STATE_PREFIX = "gzip-base64:"
+MAX_STORAGE_STATE_BYTES = 4 * 1024 * 1024
 
 
 def load_settings(env_file: str | Path | None = None) -> Settings:
@@ -129,6 +137,17 @@ def _parse_skip_dates(raw: Any, targets: tuple[Target, ...]) -> dict[str, tuple[
 
 
 def parse_auth_json(value: str, label: str) -> Any:
+    if label == "DOUYIN_STORAGE_STATE" and value.startswith(PACKED_STORAGE_STATE_PREFIX):
+        try:
+            payload = base64.b64decode(value.removeprefix(PACKED_STORAGE_STATE_PREFIX), validate=True)
+            with gzip.GzipFile(fileobj=io.BytesIO(payload)) as archive:
+                state = archive.read(MAX_STORAGE_STATE_BYTES + 1)
+            if len(state) > MAX_STORAGE_STATE_BYTES:
+                raise ValueError("Storage state exceeds the decompression limit")
+            return json.loads(state)
+        except (ValueError, OSError, EOFError, zlib.error):
+            raise ConfigError(f"{label} 压缩登录状态无效") from None
+
     candidate = Path(value).expanduser()
     try:
         if candidate.is_file():

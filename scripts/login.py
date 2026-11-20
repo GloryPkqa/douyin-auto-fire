@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
+import base64
+import gzip
 import sys
 from pathlib import Path
 
@@ -11,8 +14,26 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from playwright.async_api import async_playwright
 
+from app.config import MAX_STORAGE_STATE_BYTES, PACKED_STORAGE_STATE_PREFIX
+
 
 DOUYIN_URL = "https://www.douyin.com/"
+GITHUB_SECRET_LIMIT = 48 * 1024
+
+
+def export_github_state() -> None:
+    state = Path("storage-state.json").read_bytes()
+    if len(state) > MAX_STORAGE_STATE_BYTES:
+        raise ValueError("登录状态超过程序支持的大小")
+    packed = PACKED_STORAGE_STATE_PREFIX + base64.b64encode(gzip.compress(state, mtime=0)).decode("ascii")
+    if len(packed) > GITHUB_SECRET_LIMIT:
+        raise ValueError("压缩后的登录状态仍超过 GitHub Secret 的 48 KB 上限")
+    output = Path("storage-state-github.txt")
+    temporary = output.with_suffix(".txt.tmp")
+    temporary.write_text(packed, encoding="ascii")
+    temporary.replace(output)
+    print(f"GitHub 登录状态已保存到 {output}（{len(packed)} 字节）")
+
 
 async def login() -> None:
     async with async_playwright() as playwright:
@@ -54,4 +75,12 @@ async def _verify_home_login(page) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(login())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--export-github", action="store_true", help="将当前 storage-state.json 无损导出为 GitHub Secret")
+    if parser.parse_args().export_github:
+        try:
+            export_github_state()
+        except (OSError, ValueError) as exc:
+            parser.exit(1, f"导出失败：{exc}\n")
+    else:
+        asyncio.run(login())
